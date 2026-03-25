@@ -1,7 +1,6 @@
 import { createServer } from 'http';
 import app from './app.js';
 import { env } from './config/env.js';
-import { closeMysqlPool } from './db/mysql.pool.js';
 import { closeSqlPool, getSqlServerHealth } from './db/sqlServer.pool.js';
 import { logger } from './utils/logger.js';
 
@@ -26,7 +25,7 @@ server.listen(env.PORT, () => {
 const shutdown = (signal) => {
   logger.info(`${signal} received, closing server`);
   server.close(() => {
-    Promise.all([closeSqlPool(), closeMysqlPool()])
+    Promise.all([closeSqlPool()])
       .then(() => {
         logger.info('HTTP server closed');
         process.exit(0);

@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { env } from '../config/env.js';
-import { getMysqlPool, isMysqlConfigured } from '../db/mysql.pool.js';
+import { getSqlPool, isSqlServerConfigured, sql } from '../db/sqlServer.pool.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../constants/httpStatus.js';
 import {
@@ -9,10 +9,29 @@ import {
 } from '../utils/jwt.util.js';
 
 const MOBILE_RE = /^\d{6,15}$/;
+/** PHP bcrypt uses $2y$; Node bcrypt compares reliably when normalized to $2a$. */
+function normalizeBcryptHash(hash) {
+  const h = String(hash ?? '');
+  if (h.startsWith('$2y$')) return `$2a$${h.slice(4)}`;
+  return h;
+}
 
-function ensureAuthDb() {
-  if (!isMysqlConfigured() || !getMysqlPool()) {
-    throw new AppError('Authentication is not configured', HttpStatus.SERVICE_UNAVAILABLE);
+async function ensureAuthDb() {
+  if (!isSqlServerConfigured()) {
+    throw new AppError(
+      'Authentication is not configured: set DB_SERVER, DB_DATABASE, DB_USER, and DB_PASSWORD for SQL Server.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+  if (!env.JWT_SECRET || env.JWT_SECRET.length < 16) {
+    throw new AppError(
+      'JWT_SECRET must be at least 16 characters to issue login tokens.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+  const pool = await getSqlPool();
+  if (!pool) {
+    throw new AppError('Database connection not available', HttpStatus.SERVICE_UNAVAILABLE);
   }
 }
 
@@ -22,23 +41,32 @@ function formatCreatedAt(value) {
   return String(value);
 }
 
+function rowToUserShape(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    dbname: row.dbname ?? row.db_name ?? null,
+  };
+}
+
 /** Public user shape (never includes password_hash). */
 export function toPublicUser(row) {
+  const r = rowToUserShape(row);
   return {
-    id: String(row.id),
-    name: row.name,
-    mobile: row.mobile,
-    dbname: row.dbname ?? null,
-    created_at: formatCreatedAt(row.created_at),
-    status: row.status,
-    api_token: row.api_token ?? null,
-    token_expires_at: row.token_expires_at ?? null,
-    last_login: row.last_login != null ? formatCreatedAt(row.last_login) : null,
+    id: String(r.id),
+    name: r.name,
+    mobile: r.mobile,
+    dbname: r.dbname ?? null,
+    created_at: formatCreatedAt(r.created_at),
+    status: r.status,
+    api_token: r.api_token ?? null,
+    token_expires_at: r.token_expires_at ?? null,
+    last_login: r.last_login != null ? formatCreatedAt(r.last_login) : null,
   };
 }
 
 export async function registerUser({ name, mobile, password }) {
-  ensureAuthDb();
+  await ensureAuthDb();
   const n = String(name ?? '').trim();
   const m = String(mobile ?? '').trim();
   const p = password ?? '';
@@ -51,17 +79,23 @@ export async function registerUser({ name, mobile, password }) {
   }
 
   const passwordHash = await bcrypt.hash(p, env.BCRYPT_ROUNDS);
-  const pool = getMysqlPool();
+  const pool = await getSqlPool();
 
   try {
-    const [result] = await pool.execute(
-      `INSERT INTO users (name, mobile, password_hash, dbname, status)
-       VALUES (?, ?, ?, NULL, 'pending')`,
-      [n, m, passwordHash],
-    );
-    return { id: result.insertId, name: n, mobile: m };
+    const result = await pool
+      .request()
+      .input('name', sql.NVarChar(255), n)
+      .input('mobile', sql.NVarChar(32), m)
+      .input('password_hash', sql.NVarChar(255), passwordHash)
+      .query(`
+        INSERT INTO users (name, mobile, password_hash, status)
+        OUTPUT INSERTED.id AS id
+        VALUES (@name, @mobile, @password_hash, N'pending')
+      `);
+    const insertId = result.recordset[0]?.id;
+    return { id: insertId, name: n, mobile: m };
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
+    if (err.number === 2627 || err.number === 2601) {
       throw new AppError('Mobile already registered', HttpStatus.CONFLICT);
     }
     throw err;
@@ -69,7 +103,7 @@ export async function registerUser({ name, mobile, password }) {
 }
 
 export async function loginUser({ mobile, password }) {
-  ensureAuthDb();
+  await ensureAuthDb();
   const m = String(mobile ?? '').trim();
   const p = password ?? '';
 
@@ -77,15 +111,19 @@ export async function loginUser({ mobile, password }) {
     throw new AppError('Provide mobile and password', HttpStatus.BAD_REQUEST);
   }
 
-  const pool = getMysqlPool();
-  const [rows] = await pool.execute(
-    `SELECT id, name, mobile, password_hash, dbname, status, api_token, token_expires_at, created_at
-     FROM users WHERE mobile = ? LIMIT 1`,
-    [m],
-  );
+  const pool = await getSqlPool();
+  const result = await pool
+    .request()
+    .input('mobile', sql.NVarChar(32), m)
+    .query(`
+      SELECT TOP 1 *
+      FROM users
+      WHERE mobile = @mobile
+    `);
 
-  const row = rows[0];
-  if (!row || !(await bcrypt.compare(p, row.password_hash))) {
+  const row = rowToUserShape(result.recordset[0]);
+  const storedHash = normalizeBcryptHash(row?.password_hash);
+  if (!row || !storedHash || !(await bcrypt.compare(p, storedHash))) {
     throw new AppError('Invalid credentials', HttpStatus.UNAUTHORIZED);
   }
 
@@ -103,12 +141,15 @@ export async function loginUser({ mobile, password }) {
 }
 
 export async function findUserById(id) {
-  ensureAuthDb();
-  const pool = getMysqlPool();
-  const [rows] = await pool.execute(
-    `SELECT id, name, mobile, dbname, status, api_token, token_expires_at, created_at
-     FROM users WHERE id = ? LIMIT 1`,
-    [id],
-  );
-  return rows[0] ?? null;
+  await ensureAuthDb();
+  const pool = await getSqlPool();
+  const result = await pool
+    .request()
+    .input('id', sql.NVarChar(32), String(id))
+    .query(`
+      SELECT *
+      FROM users
+      WHERE id = @id
+    `);
+  return rowToUserShape(result.recordset[0]) ?? null;
 }

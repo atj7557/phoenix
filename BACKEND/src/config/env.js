@@ -39,12 +39,6 @@ const envSchema = z
     /** If true, health runs read-only `SELECT 1`. Default false if you must not run queries. */
     DB_HEALTHCHECK_SELECT_ONE: toBool(false),
 
-    MYSQL_HOST: z.string().optional().default(''),
-    MYSQL_PORT: z.coerce.number().int().positive().default(3306),
-    MYSQL_USER: z.string().optional().default(''),
-    MYSQL_PASSWORD: z.string().optional().default(''),
-    MYSQL_DATABASE: z.string().optional().default(''),
-
     JWT_SECRET: z.string().optional().default(''),
     JWT_EXPIRES_IN: z.string().default('30d'),
     BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(10),
@@ -68,34 +62,6 @@ const envSchema = z
         message:
           'SQL Server: set DB_SERVER, DB_DATABASE, DB_USER, and DB_PASSWORD together (use empty DB_PASSWORD only if truly no password).',
         path: ['DB_SERVER'],
-      });
-    }
-
-    const mysqlAny = Boolean(
-      data.MYSQL_HOST?.trim() ||
-        data.MYSQL_DATABASE?.trim() ||
-        data.MYSQL_USER?.trim() ||
-        data.MYSQL_PASSWORD !== '',
-    );
-    const mysqlAll = Boolean(
-      data.MYSQL_HOST?.trim() &&
-        data.MYSQL_DATABASE?.trim() &&
-        data.MYSQL_USER?.trim() &&
-        data.MYSQL_PASSWORD !== undefined,
-    );
-    if (mysqlAny && !mysqlAll) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'MySQL: set MYSQL_HOST, MYSQL_DATABASE, MYSQL_USER, and MYSQL_PASSWORD together.',
-        path: ['MYSQL_HOST'],
-      });
-    }
-    if (mysqlAll && data.JWT_SECRET.length < 16) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'JWT_SECRET must be at least 16 characters when MySQL auth is configured.',
-        path: ['JWT_SECRET'],
       });
     }
   });

@@ -14,15 +14,6 @@ export function errorMiddleware(err, req, res, _next) {
         ? 'Internal server error'
         : err.message || 'Internal server error';
 
-  if (err.code === 'ER_ACCESS_DENIED_ERROR') {
-    statusCode = HttpStatus.SERVICE_UNAVAILABLE;
-    message =
-      'MySQL access denied: check MYSQL_USER and MYSQL_PASSWORD in .env (empty MYSQL_PASSWORD means "no password"; your MySQL user may require one).';
-    if (env.NODE_ENV !== 'production' && err.sqlMessage) {
-      message = `${message} — ${err.sqlMessage}`;
-    }
-  }
-
   if (statusCode >= 500) {
     logger.error(err);
   }
