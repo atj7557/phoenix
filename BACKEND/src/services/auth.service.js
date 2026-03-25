@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { env } from '../config/env.js';
-import { getSqlPool, isSqlServerConfigured, sql } from '../db/sqlServer.pool.js';
+import { getSqlPool, isSqlServerConfigured, sql, sqlServerEnvGaps } from '../db/sqlServer.pool.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../constants/httpStatus.js';
 import {
@@ -18,8 +18,11 @@ function normalizeBcryptHash(hash) {
 
 async function ensureAuthDb() {
   if (!isSqlServerConfigured()) {
+    const gaps = sqlServerEnvGaps();
     throw new AppError(
-      'Authentication is not configured: set DB_SERVER, DB_DATABASE, DB_USER, and DB_PASSWORD for SQL Server.',
+      `Authentication is not configured: SQL Server env incomplete (missing or empty: ${gaps.join(', ') || 'unknown'}). ` +
+        'Set DB_SERVER, DB_DATABASE, DB_USER, DB_PASSWORD in BACKEND/.env or pass them as real environment variables. ' +
+        'If the app already connects to SQL Server on /health but login fails, redeploy the latest code and restart from the BACKEND folder.',
       HttpStatus.SERVICE_UNAVAILABLE,
     );
   }

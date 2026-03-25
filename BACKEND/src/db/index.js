@@ -4,4 +4,5 @@ export {
   getSqlServerHealth,
   isSqlServerConfigured,
   sql,
+  sqlServerEnvGaps,
 } from './sqlServer.pool.js';

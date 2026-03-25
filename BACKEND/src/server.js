@@ -1,7 +1,12 @@
 import { createServer } from 'http';
 import app from './app.js';
 import { env } from './config/env.js';
-import { closeSqlPool, getSqlServerHealth } from './db/sqlServer.pool.js';
+import {
+  closeSqlPool,
+  getSqlServerHealth,
+  isSqlServerConfigured,
+  sqlServerEnvGaps,
+} from './db/sqlServer.pool.js';
 import { logger } from './utils/logger.js';
 
 const server = createServer(app);
@@ -9,6 +14,13 @@ const server = createServer(app);
 server.listen(env.PORT, () => {
   logger.info(`Server listening on port ${env.PORT} (${env.NODE_ENV})`);
   logger.info(`API base: http://localhost:${env.PORT}${env.API_PREFIX}`);
+  {
+    const gaps = sqlServerEnvGaps();
+    const jwtOk = Boolean(env.JWT_SECRET && env.JWT_SECRET.length >= 16);
+    logger.info(
+      `Auth (login): SQL Server env ${gaps.length ? `incomplete (${gaps.join(', ')})` : 'ok'}, JWT ${jwtOk ? 'ok' : 'missing or under 16 chars'}`,
+    );
+  }
 
   void (async () => {
     const db = await getSqlServerHealth();

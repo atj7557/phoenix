@@ -1,7 +1,12 @@
 import { config as loadEnv } from 'dotenv';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { z } from 'zod';
 
-loadEnv();
+// Load .env from BACKEND root even if the process was started from another cwd (PM2, systemd, panels).
+const envFileDir = dirname(fileURLToPath(import.meta.url));
+const projectRoot = join(envFileDir, '..', '..');
+loadEnv({ path: join(projectRoot, '.env') });
 
 function toBool(defaultValue) {
   return z

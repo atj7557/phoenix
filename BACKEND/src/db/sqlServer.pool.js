@@ -3,13 +3,17 @@ import { env } from '../config/env.js';
 
 let poolPromise = null;
 
+/** Missing or blank vars required for SQL Server (password may be empty string). */
+export function sqlServerEnvGaps() {
+  const gaps = [];
+  if (!env.DB_SERVER?.trim()) gaps.push('DB_SERVER');
+  if (!env.DB_DATABASE?.trim()) gaps.push('DB_DATABASE');
+  if (!env.DB_USER?.trim()) gaps.push('DB_USER');
+  return gaps;
+}
+
 export function isSqlServerConfigured() {
-  return Boolean(
-    env.DB_SERVER?.trim() &&
-      env.DB_DATABASE?.trim() &&
-      env.DB_USER?.trim() &&
-      env.DB_PASSWORD !== undefined,
-  );
+  return sqlServerEnvGaps().length === 0;
 }
 
 function buildPoolConfig() {
