@@ -6,7 +6,7 @@ import { closeSqlPool, getSqlServerHealth } from './db/sqlServer.pool.js';
 import { logger } from './utils/logger.js';
 
 const server = createServer(app);
-//cicd
+//cicd test
 server.listen(env.PORT, () => {
   logger.info(`Server listening on port ${env.PORT} (${env.NODE_ENV})`);
   logger.info(`API base: http://localhost:${env.PORT}${env.API_PREFIX}`);
