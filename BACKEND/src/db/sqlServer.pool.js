@@ -22,7 +22,8 @@ function buildPoolConfig() {
     port: env.DB_PORT,
     database: env.DB_DATABASE.trim(),
     user: env.DB_USER.trim(),
-    password: env.DB_PASSWORD,
+    // Trim: panel/.env paste often adds a trailing newline, which breaks SQL auth.
+    password: String(env.DB_PASSWORD ?? '').trim(),
     options: {
       encrypt: env.DB_ENCRYPT,
       trustServerCertificate: env.DB_TRUST_SERVER_CERTIFICATE,
